@@ -25,7 +25,6 @@ rustPlatform.buildRustPackage rec {
     repo = "polkadot-sdk";
     rev = "polkadot-${version}";
     hash = "sha256-0oqSABuCcyNhvCJyZuesnPvsUgHdNXdc36HeNMmToYM=";
-
     # the build process of polkadot requires a .git folder in order to determine
     # the git commit hash that is being built and add it to the version string.
     # since having a .git folder introduces reproducibility issues to the nix
@@ -39,6 +38,8 @@ rustPlatform.buildRustPackage rec {
       rm -rf $out/.git
     '';
   };
+
+  cargoHash = "";
 
   preBuild = ''
     export SUBSTRATE_CLI_GIT_COMMIT_HASH=$(< .git_commit)
