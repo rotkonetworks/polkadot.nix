@@ -1,16 +1,16 @@
-{
-  fetchFromGitHub,
-  lib,
-  openssl,
-  pkg-config,
-  protobuf,
-  rocksdb_8_3,
-  rust-jemalloc-sys-unprefixed,
-  rustPlatform,
-  rustc,
-  stdenv,
-  Security,
-  SystemConfiguration,
+{ fetchFromGitHub
+, lib
+, openssl
+, pkg-config
+, protobuf
+, rocksdb_8_3
+, rust-jemalloc-sys-unprefixed
+, rustPlatform
+, rustc
+, stdenv
+, Security
+, SystemConfiguration
+,
 }:
 
 let
@@ -18,13 +18,13 @@ let
 in
 rustPlatform.buildRustPackage rec {
   pname = "polkadot";
-  version = "stable2409-2";
+  version = "stable2412";
 
   src = fetchFromGitHub {
     owner = "paritytech";
     repo = "polkadot-sdk";
     rev = "polkadot-${version}";
-    hash = "sha256-nCxnQ243afj9Bq8LMXEvn5ZGYw2SonfeJMd0OOi/GZ0=";
+    hash = "";
 
     # the build process of polkadot requires a .git folder in order to determine
     # the git commit hash that is being built and add it to the version string.
