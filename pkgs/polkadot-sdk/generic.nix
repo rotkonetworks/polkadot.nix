@@ -1,21 +1,20 @@
-{
-  pname,
-  target,
-  description,
-  license,
-
-  fetchFromGitHub,
-  lib,
-  openssl,
-  pkg-config,
-  protobuf,
-  rocksdb_8_3,
-  rust-jemalloc-sys-unprefixed,
-  rustPlatform,
-  rustc,
-  stdenv,
-  Security,
-  SystemConfiguration,
+{ pname
+, target
+, description
+, license
+, fetchFromGitHub
+, lib
+, openssl
+, pkg-config
+, protobuf
+, rocksdb_8_3
+, rust-jemalloc-sys-unprefixed
+, rustPlatform
+, rustc
+, stdenv
+, Security
+, SystemConfiguration
+,
 }:
 
 let

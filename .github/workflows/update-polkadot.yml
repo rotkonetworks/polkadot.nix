@@ -1,0 +1,134 @@
+name: Update Polkadot Nix Package
+
+on:
+  workflow_dispatch: # Allow manual triggering
+  schedule:
+    - cron: "0 */4 * * *" # Runs every 4 hours
+
+jobs:
+  update-polkadot:
+    name: Update Polkadot Nix Package
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Nix
+      - name: Set up Nix
+        uses: cachix/install-nix-action@v22
+
+      # Step 3: Fetch the latest stable release tag
+      - name: Fetch latest stable release
+        id: fetch_version
+        run: |
+          API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/tags?per_page=100&page=2"
+
+          # Fetch tags and find the latest stable release matching polkadot-stableYYMM(-x)?
+          TAG=$(curl -s $API_URL | jq -r '
+            map(select(.name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
+            | sort_by(.name) | reverse | .[0].name'
+          )
+
+          if [[ -z "$TAG" ]]; then
+            echo "No stable release found. Exiting."
+            exit 1
+          fi
+
+          VERSION=${TAG#"polkadot-stable"}
+          echo "Latest version: $VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG=$TAG" >> $GITHUB_ENV
+
+      # Step 4: Update version in default.nix with placeholder hash
+      - name: Update version in generic.nix
+        run: |
+          FILE="pkgs/polkadot-sdk/generic.nix"
+          VERSION="${{ env.VERSION }}"
+
+          # First verify the file exists
+          if [ ! -f "$FILE" ]; then
+            echo "Error: $FILE does not exist"
+            exit 1
+          fi
+
+          # Extract current version from the file
+          CURRENT_VERSION=$(grep -oP 'version = "\K[^"]+' "$FILE")
+          echo "Current version: $CURRENT_VERSION"
+          echo "New version: $VERSION"
+
+          # Compare versions
+          if [ "$CURRENT_VERSION" = "$VERSION" ]; then
+            echo "Version $VERSION is already current. No update needed."
+            echo "skip=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          # Update version, set placeholder hash
+          sed -i "s|version = \".*\";|version = \"$VERSION\";|" $FILE
+          sed -i "s|hash = \"sha256-[a-zA-Z0-9+/=]*\";|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|" $FILE
+          echo "skip=false" >> $GITHUB_ENV
+
+      # Step 5: Check flake and capture the corrected hash
+      - name: Check flake to find correct hash
+        if: env.skip == 'false'
+        id: get_correct_hash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+
+          # Run flake check to trigger hash mismatch error
+          OUTPUT=$(nix flake check --extra-experimental-features nix-command --extra-experimental-features flakes 2>&1 | tee build.log || true)
+
+          # Debug log output
+          echo "Log content:"
+          cat build.log
+
+          # Extract the corrected hash from the log using the specific error message format
+          HASH=$(grep -oP 'got:\s+sha256-\K[a-zA-Z0-9+/=]+' build.log | head -n1)
+
+          if [[ -z "$HASH" ]]; then
+            # Try alternative format
+            HASH=$(grep -oP 'got:\s*sha256-\K[a-zA-Z0-9+/=]+' build.log | head -n1)
+          fi
+
+          if [[ -z "$HASH" ]]; then
+            echo "Error: Could not extract hash from log"
+            exit 1
+          fi
+
+          echo "Found corrected hash: $HASH"
+          echo "HASH=$HASH" >> $GITHUB_ENV
+
+          # Verify hash was set
+          if [[ -z "${HASH}" ]]; then
+            echo "Error: Hash extraction failed"
+            exit 1
+          fi
+
+      # Step 6: Update default.nix with the corrected hash
+      - name: Update Nix file with correct hash
+        if: env.skip == 'false'
+        run: |
+          FILE="pkgs/polkadot-sdk/generic.nix"
+          HASH="${{ env.HASH }}"
+
+          # Replace placeholder hash with the correct one
+          sed -i "s|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|hash = \"sha256-$HASH\";|" $FILE
+          echo "Updated hash in $FILE"
+
+      # Step 7: Commit and push changes
+      - name: Commit and push changes
+        if: env.skip == 'false'
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'actions@github.com'
+          git add pkgs/polkadot-sdk/generic.nix
+          git commit -m "chore: update Polkadot to latest stable release ${{ env.VERSION }}"
+          git push
+
+      - name: Skip Message
+        if: env.skip == 'true'
+        run: |
+          echo "No update needed. Workflow exiting gracefully."
