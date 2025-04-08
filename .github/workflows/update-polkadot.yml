@@ -117,6 +117,44 @@ jobs:
           # Replace placeholder hash with the correct one
           sed -i "s|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|hash = \"sha256-$HASH\";|" $FILE
           echo "Updated hash in $FILE"
+            # Step 6.5: Run build to capture correct cargoHash
+      - name: Get correct cargoHash
+        if: env.skip == 'false'
+        id: get_cargo_hash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          FILE="pkgs/polkadot-sdk/generic.nix"
+
+          # Put a bogus cargoHash to trigger the error
+          sed -i 's|cargoHash = "sha256-[a-zA-Z0-9+/=]*"|cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' $FILE
+
+          # Run nix build and capture output
+          OUTPUT=$(nix build .#polkadot --extra-experimental-features nix-command --extra-experimental-features flakes 2>&1 | tee cargo.log || true)
+
+          echo "Cargo build output:"
+          cat cargo.log
+
+          # Extract correct cargoHash from the error
+          CARGO_HASH=$(grep -oP 'got:\s+sha256-\K[a-zA-Z0-9+/=]+' cargo.log | head -n1)
+
+          if [[ -z "$CARGO_HASH" ]]; then
+            echo "Error: Failed to extract cargoHash"
+            exit 1
+          fi
+
+          echo "CARGO_HASH=$CARGO_HASH" >> $GITHUB_ENV
+
+            # Step 6.6: Update generic.nix with correct cargoHash
+      - name: Update Nix file with correct cargoHash
+        if: env.skip == 'false'
+        run: |
+          FILE="pkgs/polkadot-sdk/generic.nix"
+          HASH="${{ env.CARGO_HASH }}"
+
+          # Replace placeholder cargoHash
+          sed -i "s|cargoHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|cargoHash = \"sha256-$HASH\";|" $FILE
+          echo "Updated cargoHash in $FILE"
 
       # Step 7: Commit and push changes
       - name: Commit and push changes
