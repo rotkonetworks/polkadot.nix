@@ -11,19 +11,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the repository
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Nix
       - name: Set up Nix
         uses: cachix/install-nix-action@v22
 
-      # Step 3: Fetch the latest stable release tag
       - name: Fetch latest stable release
         id: fetch_version
         run: |
-          API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/releases"
+          API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/releases?per_page=100"
 
           TAG=$(curl -s "$API_URL" | jq -r '
             map(select(.tag_name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
@@ -54,132 +51,89 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "TAG=$TAG" >> $GITHUB_ENV
 
-      # Step 4: Update version in default.nix with placeholder hash
       - name: Update version in generic.nix
         run: |
+          set -euo pipefail
           FILE="pkgs/polkadot-sdk/generic.nix"
           VERSION="${{ env.VERSION }}"
 
-          # First verify the file exists
           if [ ! -f "$FILE" ]; then
-            echo "Error: $FILE does not exist"
-            exit 1
+            echo "Error: $FILE does not exist" && exit 1
           fi
 
-          # Extract current version from the file
           CURRENT_VERSION=$(grep -oP 'version = "\K[^"]+' "$FILE")
           echo "Current version: $CURRENT_VERSION"
           echo "New version: $VERSION"
 
-          # Compare versions
           if [ "$CURRENT_VERSION" = "$VERSION" ]; then
             echo "Version $VERSION is already current. No update needed."
-            echo "skip=true" >> $GITHUB_ENV
+            echo "skip=true" >> "$GITHUB_ENV"
             exit 0
           fi
 
-          # Update version, set placeholder hash
-          sed -i "s|version = \".*\";|version = \"$VERSION\";|" $FILE
-          sed -i "s|hash = \"sha256-[a-zA-Z0-9+/=]*\";|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|" $FILE
-          echo "skip=false" >> $GITHUB_ENV
+          # Update version and set placeholder hash for later replacement
+          sed -i "s|version = \".*\";|version = \"$VERSION\";|" "$FILE"
+          sed -i 's|hash = "sha256-[^"]*";|hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";|' "$FILE"
+          echo "skip=false" >> "$GITHUB_ENV"
 
-      # Step 5: Check flake and capture the corrected hash
       - name: Check flake to find correct hash
         if: env.skip == 'false'
         id: get_correct_hash
-        continue-on-error: true
         run: |
-          set -o pipefail
-
-          # Run flake check to trigger hash mismatch error
+          set -euo pipefail
           OUTPUT=$(nix flake check --extra-experimental-features nix-command --extra-experimental-features flakes 2>&1 | tee build.log || true)
-
-          # Debug log output
-          echo "Log content:"
-          cat build.log
-
-          # Extract the corrected hash from the log using the specific error message format
-          HASH=$(grep -oP 'got:\s+sha256-\K[a-zA-Z0-9+/=]+' build.log | head -n1)
-
+          # Look for the correct hash within the output
+          HASH=$(grep -oP 'got:\s*sha256-\K[a-zA-Z0-9+/=]+' build.log | head -n1)
           if [[ -z "$HASH" ]]; then
-            # Try alternative format
-            HASH=$(grep -oP 'got:\s*sha256-\K[a-zA-Z0-9+/=]+' build.log | head -n1)
+            echo "Error: Could not extract hash from log" && exit 1
           fi
-
-          if [[ -z "$HASH" ]]; then
-            echo "Error: Could not extract hash from log"
-            exit 1
-          fi
-
           echo "Found corrected hash: $HASH"
-          echo "HASH=$HASH" >> $GITHUB_ENV
+          echo "HASH=$HASH" >> "$GITHUB_ENV"
 
-          # Verify hash was set
-          if [[ -z "${HASH}" ]]; then
-            echo "Error: Hash extraction failed"
-            exit 1
-          fi
-
-      # Step 6: Update default.nix with the corrected hash
       - name: Update Nix file with correct hash
         if: env.skip == 'false'
         run: |
+          set -euo pipefail
           FILE="pkgs/polkadot-sdk/generic.nix"
           HASH="${{ env.HASH }}"
-
-          # Replace placeholder hash with the correct one
-          sed -i "s|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|hash = \"sha256-$HASH\";|" $FILE
+          sed -i "s|hash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\";|hash = \"sha256-$HASH\";|" "$FILE"
           echo "Updated hash in $FILE"
-            # Step 6.5: Run build to capture correct cargoHash
+
       - name: Get correct cargoHash
         if: env.skip == 'false'
         id: get_cargo_hash
-        continue-on-error: true
         run: |
-          set -o pipefail
+          set -euo pipefail
           FILE="pkgs/polkadot-sdk/generic.nix"
-
-          # Put a bogus cargoHash to trigger the error
-          sed -i 's|cargoHash = "sha256-[a-zA-Z0-9+/=]*"|cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' $FILE
-
-          # Run nix build and capture output
+          # Introduce a bogus cargoHash to force a hash mismatch error and reveal the correct value
+          sed -i 's|cargoHash = "sha256-[^"]*"|cargoHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"|' "$FILE"
           OUTPUT=$(nix build .#polkadot --extra-experimental-features nix-command --extra-experimental-features flakes 2>&1 | tee cargo.log || true)
-
-          echo "Cargo build output:"
-          cat cargo.log
-
-          # Extract correct cargoHash from the error
-          CARGO_HASH=$(grep -oP 'got:\s+sha256-\K[a-zA-Z0-9+/=]+' cargo.log | head -n1)
-
+          echo "Cargo build output:" && cat cargo.log
+          CARGO_HASH=$(grep -oP 'got:\s*sha256-\K[a-zA-Z0-9+/=]+' cargo.log | head -n1)
           if [[ -z "$CARGO_HASH" ]]; then
-            echo "Error: Failed to extract cargoHash"
-            exit 1
+            echo "Error: Failed to extract cargoHash" && exit 1
           fi
+          echo "CARGO_HASH=$CARGO_HASH" >> "$GITHUB_ENV"
 
-          echo "CARGO_HASH=$CARGO_HASH" >> $GITHUB_ENV
-
-            # Step 6.6: Update generic.nix with correct cargoHash
       - name: Update Nix file with correct cargoHash
         if: env.skip == 'false'
         run: |
+          set -euo pipefail
           FILE="pkgs/polkadot-sdk/generic.nix"
-          HASH="${{ env.CARGO_HASH }}"
-
-          # Replace placeholder cargoHash
-          sed -i "s|cargoHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";|cargoHash = \"sha256-$HASH\";|" $FILE
+          CARGO_HASH="${{ env.CARGO_HASH }}"
+          sed -i "s|cargoHash = \"sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\";|cargoHash = \"sha256-$CARGO_HASH\";|" "$FILE"
           echo "Updated cargoHash in $FILE"
 
-      # Step 7: Commit and push changes
       - name: Commit and push changes
         if: env.skip == 'false'
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'actions@github.com'
+          set -euo pipefail
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
           git add pkgs/polkadot-sdk/generic.nix
           git commit -m "chore: update Polkadot to latest stable release ${{ env.VERSION }}"
           git push
 
       - name: Skip Message
         if: env.skip == 'true'
-        run: |
-          echo "No update needed. Workflow exiting gracefully."
+        run: echo "No update needed. Workflow exiting gracefully."
