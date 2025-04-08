@@ -23,13 +23,26 @@ jobs:
       - name: Fetch latest stable release
         id: fetch_version
         run: |
-          API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/tags?per_page=100&page=2"
+          API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/releases"
 
-          # Fetch tags and find the latest stable release matching polkadot-stableYYMM(-x)?
-          TAG=$(curl -s $API_URL | jq -r '
-            map(select(.name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
-            | sort_by(.name) | reverse | .[0].name'
-          )
+          TAG=$(curl -s "$API_URL" | jq -r '
+            map(select(.tag_name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
+            | map(.tag_name)
+            | map({
+                tag: .,
+                base: (capture("polkadot-stable(?<base>[0-9]{4})").base | tonumber),
+                patch: (
+                  if test("-[0-9]+$") then
+                    (capture("-(?<patch>[0-9]+)$").patch | tonumber)
+                  else
+                    0
+                  end
+                )
+              })
+            | sort_by(.base, .patch)
+            | reverse
+            | .[0].tag
+          ')
 
           if [[ -z "$TAG" ]]; then
             echo "No stable release found. Exiting."
