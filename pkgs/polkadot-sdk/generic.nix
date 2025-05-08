@@ -1,20 +1,22 @@
-{ pname
-, target
-, description
-, license
-, fetchFromGitHub
-, lib
-, openssl
-, pkg-config
-, protobuf
-, rocksdb_8_3
-, rust-jemalloc-sys-unprefixed
-, rustPlatform
-, rustc
-, stdenv
-, Security
-, SystemConfiguration
-,
+{
+  pname,
+  target,
+  description,
+  license,
+
+  cacert,
+  fetchFromGitHub,
+  lib,
+  openssl,
+  pkg-config,
+  protobuf,
+  rocksdb_8_3,
+  rust-jemalloc-sys-unprefixed,
+  rustPlatform,
+  rustc,
+  stdenv,
+  Security,
+  SystemConfiguration,
 }:
 
 let
@@ -56,11 +58,6 @@ rustPlatform.buildRustPackage rec {
   buildType = "production";
   buildAndTestSubdir = target;
 
-  # NOTE: tests currently fail to compile due to an issue with cargo-auditable
-  # and resolution of features flags, potentially related to this:
-  # https://github.com/rust-secure-code/cargo-auditable/issues/66
-  doCheck = false;
-
   nativeBuildInputs = [
     pkg-config
     rustPlatform.bindgenHook
@@ -77,11 +74,9 @@ rustPlatform.buildRustPackage rec {
       SystemConfiguration
     ];
 
-  # NOTE: currently we can't build the runtimes since it requires rebuilding rust std
-  # (-Zbuild-std), for which rust-src is required to be available in the sysroot of rustc.
-  # this should no longer be needed after: https://github.com/paritytech/polkadot-sdk/pull/7008
-  # since the new wasmv1-none target won't require rebuilding std.
-  SKIP_WASM_BUILD = 1;
+  checkInputs = [
+    cacert
+  ];
 
   OPENSSL_NO_VENDOR = 1;
   PROTOC = "${protobuf}/bin/protoc";
