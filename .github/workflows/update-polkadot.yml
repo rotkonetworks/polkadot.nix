@@ -22,23 +22,33 @@ jobs:
         run: |
           API_URL="https://api.github.com/repos/paritytech/polkadot-sdk/releases?per_page=100"
 
+          # TAG=$(curl -s "$API_URL" | jq -r '
+          #   map(select(.tag_name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
+          #   | map(.tag_name)
+          #   | map({
+          #       tag: .,
+          #       base: (capture("polkadot-stable(?<base>[0-9]{4})").base | tonumber),
+          #       patch: (
+          #         if test("-[0-9]+$") then
+          #           (capture("-(?<patch>[0-9]+)$").patch | tonumber)
+          #         else
+          #           0
+          #         end
+          #       )
+          #     })
+          #   | sort_by(.base, .patch)
+          #   | reverse
+          #   | .[0].tag
+          # ')
+
+          # include rc tags tmp
           TAG=$(curl -s "$API_URL" | jq -r '
-            map(select(.tag_name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?$")))
-            | map(.tag_name)
-            | map({
-                tag: .,
-                base: (capture("polkadot-stable(?<base>[0-9]{4})").base | tonumber),
-                patch: (
-                  if test("-[0-9]+$") then
-                    (capture("-(?<patch>[0-9]+)$").patch | tonumber)
-                  else
-                    0
-                  end
-                )
-              })
-            | sort_by(.base, .patch)
-            | reverse
-            | .[0].tag
+            map(select(.tag_name | test("^polkadot-stable[0-9]{4}(-[0-9]+)?(-rc[0-9]+)?$")))
+            | sort_by(
+                .tag_name | capture("polkadot-stable(?<base>[0-9]{4})(?:-(?<patch>[0-9]+))?(?:-rc(?<rc>[0-9]+))?") |
+                [(.base | tonumber), (.patch // "0" | tonumber), if .rc then 0 else 1 end, (.rc // "0" | tonumber) * -1]
+              )
+            | reverse | .[0].tag_name
           ')
 
           if [[ -z "$TAG" ]]; then
