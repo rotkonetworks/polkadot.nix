@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1778458615,
-        "narHash": "sha256-cY07EsdhBJ8tFXPzDYevgqxRev9ZLxFonuq9wmq5kwg=",
+        "lastModified": 1778869304,
+        "narHash": "sha256-30sZNZoA1cqF5JNO9fVX+wgiQYjB7HJqqJ4ztCDeBZE=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c6e5ca3c836a5f4dd9af9f2c1fc1c38f0fac988a",
+        "rev": "d233902339c02a9c334e7e593de68855ad26c4cb",
         "type": "github"
       },
       "original": {
@@ -95,11 +95,11 @@
         "process-compose": "process-compose"
       },
       "locked": {
-        "lastModified": 1775488422,
-        "narHash": "sha256-84oztWfGTBIMPit5jfEqPQQoVao8F8Eojnkzi6AMg+A=",
+        "lastModified": 1778625219,
+        "narHash": "sha256-2Uh+RzoumCWZBQ63Do7GRCLjIqYlwYsRZuhiy7JFJnA=",
         "owner": "paritytech",
         "repo": "zombienet",
-        "rev": "434ac89867b450678c75aca745ae2e2a8cff7876",
+        "rev": "8ee825ca4450147caebc682c755ccec23dd33001",
         "type": "github"
       },
       "original": {
